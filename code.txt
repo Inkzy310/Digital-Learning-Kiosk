@@ -1,0 +1,1853 @@
+//FORM1
+
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Data.SQLite;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using Microsoft.VisualBasic;
+
+namespace slsuThesis
+{
+    public partial class Form1 : Form
+    {
+        admin adm = new admin();
+
+        int num;
+        private int currentAnnouncementId = 1;
+        private int currentRadioIndex = 0;
+     
+        string subj = "";
+        int i = 0;
+
+        public Form1()
+        {
+            InitializeComponent();
+            ConfigureDataGridView();
+            ConfigureDataGridView2();
+        }
+
+        private GraphicsPath CreateRoundedRectanglePath(Rectangle bounds, int cornerRadius)
+        {
+            GraphicsPath path = new GraphicsPath();
+
+            cornerRadius = Math.Min(cornerRadius, Math.Min(bounds.Width, bounds.Height) / 2);
+
+            path.AddArc(bounds.Left, bounds.Top, cornerRadius * 2, cornerRadius * 2, 180, 90);
+            path.AddLine(bounds.Left + cornerRadius, bounds.Top, bounds.Right - cornerRadius, bounds.Top);
+
+            path.AddArc(bounds.Right - cornerRadius * 2, bounds.Top, cornerRadius * 2, cornerRadius * 2, 270, 90);
+            path.AddLine(bounds.Right, bounds.Top + cornerRadius, bounds.Right, bounds.Bottom - cornerRadius);
+
+            path.AddArc(bounds.Right - cornerRadius * 2, bounds.Bottom - cornerRadius * 2, cornerRadius * 2, cornerRadius * 2, 0, 90);
+            path.AddLine(bounds.Right - cornerRadius, bounds.Bottom, bounds.Left + cornerRadius, bounds.Bottom);
+
+            path.AddArc(bounds.Left, bounds.Bottom - cornerRadius * 2, cornerRadius * 2, cornerRadius * 2, 90, 90);
+            path.AddLine(bounds.Left, bounds.Bottom - cornerRadius, bounds.Left, bounds.Top + cornerRadius);
+
+            path.CloseFigure();
+            return path;
+        }
+
+        private void ChangeButtonColors(Button activeButton)
+        {
+           
+            btnLearningMaterial.BackColor = Color.White;
+            btnLearningMaterial.ForeColor = Color.DodgerBlue;
+
+            btnAnnouncement.BackColor = Color.White;
+            btnAnnouncement.ForeColor = Color.DodgerBlue;
+
+            btnClassSchedules.BackColor = Color.White;
+            btnClassSchedules.ForeColor = Color.DodgerBlue;
+
+            btnSchoolCalendar.BackColor = Color.White;
+            btnSchoolCalendar.ForeColor = Color.DodgerBlue;
+
+            btnAdmin.BackColor = Color.White;
+            btnAdmin.ForeColor = Color.DodgerBlue;
+
+           
+            activeButton.BackColor = Color.DodgerBlue;
+            activeButton.ForeColor = Color.White;
+        }
+
+        private void ApplyRoundedStyleToButtons(Button[] buttons, int cornerRadius, Color backColor, Color foreColor, Color borderColor, int borderWidth, string fontFamily, float fontSize)
+        {
+            foreach (Button button in buttons)
+            {
+
+                if (button != null)
+                {
+                    button.FlatAppearance.BorderSize = 0;
+                    button.FlatStyle = FlatStyle.Flat;
+                    button.BackColor = backColor;
+                    button.ForeColor = foreColor;
+                    button.Cursor = Cursors.Hand;
+                    button.Font = new Font(fontFamily, fontSize);
+
+                    button.Font = new Font(fontFamily, fontSize, FontStyle.Bold);
+
+                    GraphicsPath path = CreateRoundedRectanglePath(button.ClientRectangle, cornerRadius);
+                    button.Region = new Region(path);
+
+                    button.Paint += (s, e) =>
+                    {
+                        using (Pen pen = new Pen(borderColor, borderWidth))
+                        {
+                            pen.Alignment = PenAlignment.Inset;
+                            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                            e.Graphics.DrawPath(pen, path);
+                        }
+                    };
+                }
+            }
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            Button[] buttons = { btnAdmin, btnAnnouncement, btnClassSchedules, btnLearningMaterial, btnSchoolCalendar };
+
+            pnlLearn.Hide();
+            pnlAnnounce.Hide();
+            pnlClassSched.Hide();
+            pnlSchoolcal.Hide();
+            pnlLogin.Hide();
+            panel6.Hide();
+
+            LoadSchoolCalData();
+            LoadClassSchedData();
+            LoadAnnouncement1(1);
+
+            
+            foreach (DataGridViewColumn column in dataClassSched.Columns)
+            {
+                column.SortMode = DataGridViewColumnSortMode.NotSortable;
+            }
+
+            dataClassSched.SelectionMode = DataGridViewSelectionMode.CellSelect;
+            dataClassSched.ClearSelection();
+
+
+            foreach (DataGridViewColumn column in dataSchoolCal.Columns)
+            {
+                column.SortMode = DataGridViewColumnSortMode.NotSortable;
+            }
+
+            dataSchoolCal.SelectionMode = DataGridViewSelectionMode.CellSelect;
+            dataSchoolCal.ClearSelection();
+            
+
+            ApplyRoundedStyleToButtons(buttons, 40, Color.White, Color.DodgerBlue, Color.DodgerBlue, 3, "Century Gothic", 16);
+
+            label2.Text = "";
+            label1.Text = "";
+
+            try
+            {
+                DataRow announcement = DatabaseHelper.GetSingleRow(
+                    "SELECT * FROM Announcements WHERE ID = @id",
+                    new SQLiteParameter("@id", 1)
+                );
+
+                if (announcement != null)
+                {
+                    label2.Text = announcement["Title"].ToString();
+                    label1.Text = announcement["Description"].ToString();
+
+                    if (announcement["Photo"] != DBNull.Value)
+                    {
+                        byte[] photoData = (byte[])announcement["Photo"];
+                        using (MemoryStream ms = new MemoryStream(photoData))
+                        {
+                            pictureBox2.Image = Image.FromStream(ms);
+                        }
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Announcement not found.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading announcement: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        public void LoadSchoolCalData()
+        {
+            dataSchoolCal.ColumnHeadersHeight = 40;
+            dataSchoolCal.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
+            dataSchoolCal.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+
+            try
+            {
+                DataTable table = DatabaseHelper.GetDataTable("SELECT * FROM Records");
+
+                dataSchoolCal.DataSource = table;
+
+                if (dataSchoolCal.Columns["ID"] != null)
+                {
+                    dataSchoolCal.Columns["ID"].Visible = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading school calendar data: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        public void LoadClassSchedData()
+        {
+            dataClassSched.ColumnHeadersHeight = 40;
+            dataClassSched.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
+            dataClassSched.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+
+            try
+            {
+                DataTable table = DatabaseHelper.GetDataTable("SELECT * FROM ClassSchedule");
+
+                dataClassSched.DataSource = table;
+
+                if (dataClassSched.Columns["ID"] != null)
+                {
+                    dataClassSched.Columns["ID"].Visible = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading class schedule data: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        public void LoadAnnouncement(int announcementId)
+        {
+            try
+            {
+                DataRow announcement = DatabaseHelper.GetSingleRow(
+                    "SELECT * FROM Announcements WHERE ID = @id",
+                    new SQLiteParameter("@id", announcementId)
+                );
+
+                if (announcement != null)
+                {
+                    label9.Text = announcement["Title"].ToString();
+                    label14.Text = announcement["Description"].ToString();
+
+                    if (announcement["Photo"] != DBNull.Value)
+                    {
+                        byte[] photoData = (byte[])announcement["Photo"];
+                        using (MemoryStream ms = new MemoryStream(photoData))
+                        {
+                            picAnnounce.Image = Image.FromStream(ms);
+                        }
+                    }
+                    else
+                    {
+                        picAnnounce.Image = null; 
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Announcement not found.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading announcement: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void LoadAnnouncement1(int announcementId)
+        {
+            try
+            {
+                DataRow announcement = DatabaseHelper.GetSingleRow(
+                    "SELECT * FROM Announcements WHERE ID = @id",
+                    new SQLiteParameter("@id", announcementId)
+                );
+
+                if (announcement != null)
+                {
+                    label2.Text = announcement["Title"].ToString();
+                    label1.Text = announcement["Description"].ToString();
+
+                    if (announcement["Photo"] != DBNull.Value)
+                    {
+                        byte[] photoData = (byte[])announcement["Photo"];
+                        using (MemoryStream ms = new MemoryStream(photoData))
+                        {
+                            pictureBox2.Image = Image.FromStream(ms);
+                        }
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Announcement not found.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading announcement: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+
+
+        private void btnLearningMaterial_Click(object sender, EventArgs e)
+        {
+            num = 1;
+            i = 1;
+            ChangeButtonColors(btnLearningMaterial);
+
+            pnlLearn.Dock = DockStyle.Fill;
+            pnlLearn.Show();
+
+            btnAnnouncement.Enabled= false;
+            btnSchoolCalendar.Enabled= false;
+            btnClassSchedules.Enabled= false;
+            btnAdmin.Enabled= false;
+
+            pnlAnnounce.Hide();
+            pnlClassSched.Hide();
+            pnlSchoolcal.Hide();
+            pnlLogin.Hide();
+
+        }
+
+        private void btnAnnouncement_Click(object sender, EventArgs e)
+        {
+            num = 2; 
+            LoadAnnouncement(1);
+            ChangeButtonColors(btnAnnouncement);
+
+            pnlAnnounce.Dock = DockStyle.Fill;
+            pnlAnnounce.Show();
+
+            btnLearningMaterial.Enabled = false;
+            btnSchoolCalendar.Enabled = false;
+            btnClassSchedules.Enabled = false;
+            btnAdmin.Enabled = false;
+
+            pnlLearn.Hide();
+            pnlClassSched.Hide();
+            pnlSchoolcal.Hide();
+            pnlLogin.Hide();
+
+
+        }
+
+        private void btnClassSchedules_Click(object sender, EventArgs e)
+        {
+            num = 3;
+            ChangeButtonColors(btnClassSchedules);
+
+            pnlClassSched.Dock = DockStyle.Fill;
+            pnlClassSched.Show();
+
+            btnAnnouncement.Enabled = false;
+            btnSchoolCalendar.Enabled = false;
+            btnLearningMaterial.Enabled = false;
+            btnAdmin.Enabled = false;
+
+            pnlLearn.Hide();
+            pnlAnnounce.Hide();
+            pnlSchoolcal.Hide();
+            pnlLogin.Hide();
+
+            
+        }
+
+        private void btnSchoolCalendar_Click(object sender, EventArgs e)
+        {
+            num = 4;
+            ChangeButtonColors(btnSchoolCalendar);
+
+            pnlSchoolcal.Dock = DockStyle.Fill;
+            pnlSchoolcal.Show();
+
+            btnAnnouncement.Enabled = false;
+            btnClassSchedules.Enabled = false;
+            btnLearningMaterial.Enabled = false;
+            btnAdmin.Enabled = false;
+
+            pnlLearn.Hide();
+            pnlAnnounce.Hide();
+            pnlClassSched.Hide();
+            pnlLogin.Hide();
+        }
+
+        private void btnAdmin_Click(object sender, EventArgs e)
+        {
+            num = 5;
+            ChangeButtonColors(btnAdmin);
+
+            pnlLogin.Dock = DockStyle.Fill;
+            pnlLogin.Show();
+
+            btnAnnouncement.Enabled = false;
+            btnSchoolCalendar.Enabled = false;
+            btnClassSchedules.Enabled = false;
+            btnLearningMaterial.Enabled = false;
+
+            pnlLearn.Hide();
+            pnlAnnounce.Hide();
+            pnlClassSched.Hide();
+            pnlSchoolcal.Hide();
+
+        }
+        private void btnprev_Click(object sender, EventArgs e)
+        {
+           
+            if (num == 1)
+            {
+               
+                if (i==2)
+                {
+                    panel6.Hide();
+                    pnlLearn.Show();
+                    i = 1;
+                }
+                else 
+                {
+                    
+                    pnlLearn.Hide();
+
+                    btnLearningMaterial.BackColor = Color.White;
+                    btnLearningMaterial.ForeColor = Color.DodgerBlue;
+
+                    btnAdmin.BackColor = Color.White;
+                    btnAdmin.ForeColor = Color.DodgerBlue;
+                    btnLearningMaterial.Enabled = true;
+                    btnAnnouncement.Enabled = true;
+                    btnSchoolCalendar.Enabled = true;
+                    btnClassSchedules.Enabled = true;
+                    btnAdmin.Enabled = true;
+
+                }
+              
+                
+            }
+            else if (num == 2)
+            {
+                try
+                {
+                    string query = "SELECT ID FROM Announcements WHERE ID < @id ORDER BY ID DESC LIMIT 1";
+                    object result = DatabaseHelper.ExecuteScalar(query, new SQLiteParameter("@id", currentAnnouncementId));
+
+                    if (result != null)
+                    {
+                        currentAnnouncementId = Convert.ToInt32(result);
+                        LoadAnnouncement(currentAnnouncementId);
+                    }
+                    else
+                    {
+                        pnlAnnounce.Hide();
+                        
+                        btnAnnouncement.BackColor = Color.White;
+                        btnAnnouncement.ForeColor = Color.DodgerBlue;
+
+                        btnLearningMaterial.Enabled = true;
+                        btnAnnouncement.Enabled = true;
+                        btnSchoolCalendar.Enabled = true;
+                        btnClassSchedules.Enabled = true;
+                        btnAdmin.Enabled = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error navigating to the previous announcement: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            else if (num == 3)
+            {
+                pnlClassSched.Hide();
+
+                btnClassSchedules.BackColor = Color.White;
+                btnClassSchedules.ForeColor = Color.DodgerBlue;
+
+                btnLearningMaterial.Enabled = true;
+                btnAnnouncement.Enabled = true;
+                btnSchoolCalendar.Enabled = true;
+                btnClassSchedules.Enabled = true;
+                btnAdmin.Enabled = true;
+            }
+            else if(num == 4) 
+            {
+                pnlSchoolcal.Hide();
+
+                btnSchoolCalendar.BackColor = Color.White;
+                btnSchoolCalendar.ForeColor = Color.DodgerBlue;
+
+                btnLearningMaterial.Enabled = true;
+                btnAnnouncement.Enabled = true;
+                btnSchoolCalendar.Enabled = true;
+                btnClassSchedules.Enabled = true;
+                btnAdmin.Enabled = true;
+            }
+            else
+            {
+                pnlLogin.Hide();
+
+                btnAdmin.BackColor = Color.White;  
+                btnAdmin.ForeColor = Color.DodgerBlue;
+
+                btnLearningMaterial.Enabled = true;
+                btnAnnouncement.Enabled = true;
+                btnSchoolCalendar.Enabled = true;
+                btnClassSchedules.Enabled = true;
+                btnAdmin.Enabled = true;
+            }
+
+        }
+        private void btnnext_Click(object sender, EventArgs e)
+        {   if (num == 2)
+            {
+                try
+                {
+                    string query = "SELECT ID FROM Announcements WHERE ID > @id ORDER BY ID ASC LIMIT 1";
+                    object result = DatabaseHelper.ExecuteScalar(query, new SQLiteParameter("@id", currentAnnouncementId));
+
+                    if (result != null)
+                    {
+                        currentAnnouncementId = Convert.ToInt32(result);
+                        LoadAnnouncement(currentAnnouncementId);
+                    }
+                    else
+                    {
+                        MessageBox.Show("This is the last announcement.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error navigating to the next announcement: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            if(num == 5)
+            {
+                string uname = "", pass = "";
+
+                uname = textBox1.Text;
+                pass = textBox2.Text;
+                if(uname == "SLSU_ADMIN" && pass == "UAE5263") 
+                { 
+                    this.Close();
+                    adm.Show();
+             
+                this.Hide();
+                }
+                else
+                {
+                    MessageBox.Show("incorrect password or username");
+                }
+            }
+        }
+
+        
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            RadioButton[] radioButtons = { radioButton1, radioButton2, radioButton3 };
+            radioButtons[currentRadioIndex].Checked = false;
+            currentRadioIndex = (currentRadioIndex + 1) % radioButtons.Length;
+            radioButtons[currentRadioIndex].Checked = true;
+            
+            if (radioButton1.Checked)
+            {
+                label2.Text = "#";
+                label1.Text = "";
+                LoadAnnouncement1(1);
+            }
+            if (radioButton2.Checked)
+            {
+                label2.Text = "";
+                label1.Text = "";
+                LoadAnnouncement1(2);
+            }
+            if (radioButton3.Checked)
+            {
+                label2.Text = "";
+                label1.Text = "";
+                LoadAnnouncement1(3);
+            }
+        }
+
+        private void ConfigureDataGridView()
+        {
+            dataSub.Columns.Add("Filename", "Filename");
+            DataGridViewButtonColumn viewButtonColumn = new DataGridViewButtonColumn
+            {
+                HeaderText = "Action",
+                Text = "View",
+                UseColumnTextForButtonValue = true
+            };
+            dataSub.Columns.Add(viewButtonColumn);
+        }
+
+        private void ConfigureDataGridView2()
+        {
+            dataSub2.Columns.Add("Filename", "Filename");
+            DataGridViewButtonColumn viewButtonColumn = new DataGridViewButtonColumn
+            {
+                HeaderText = "Action",
+                Text = "View",
+                UseColumnTextForButtonValue = true
+            };
+            dataSub2.Columns.Add(viewButtonColumn);
+        }
+
+        // Load learning materials based on subject
+        private void LoadLearningMaterials(string subjectName)
+        {
+
+            try
+            {
+               
+                string query1stSem = "SELECT file_name FROM LearningMaterials WHERE subject_name = @subjectName AND sem = '1st'";
+                SQLiteParameter[] parameters1st = { new SQLiteParameter("@subjectName", subjectName) };
+                DataTable table1st = DatabaseHelper.ExecuteQuery(query1stSem, parameters1st);
+
+                dataSub.Rows.Clear();
+                foreach (DataRow row in table1st.Rows)
+                {
+                    dataSub.Rows.Add(row["file_name"].ToString());
+                }
+
+            
+                string query2ndSem = "SELECT file_name FROM LearningMaterials WHERE subject_name = @subjectName AND sem = '2nd'";
+                SQLiteParameter[] parameters2nd = { new SQLiteParameter("@subjectName", subjectName) };
+                DataTable table2nd = DatabaseHelper.ExecuteQuery(query2ndSem, parameters2nd);
+
+               
+                dataSub2.Rows.Clear();
+                foreach (DataRow row in table2nd.Rows)
+                {
+                    dataSub2.Rows.Add(row["file_name"].ToString());
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading materials: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+      
+        private void OpenPdf(string fileName)
+        {
+            try
+            {
+                string filePath = Path.Combine(@"C:\LearningMaterials", fileName);
+
+                if (File.Exists(filePath))
+                {
+                    Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
+                }
+                else
+                {
+                    MessageBox.Show("File not found!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening PDF: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+       
+       
+       
+ 
+        private void button4_Click_2(object sender, EventArgs e)
+        {
+
+           
+            string text = Interaction.InputBox("PASSWORD", "InputBox");
+            if(text == "fy2025")
+            { 
+            i = 2;
+            subj = "1ST YEAR LEARNING MATERIALS";
+            lblsubj.Text = subj;
+            LoadLearningMaterials("1ST YEAR LEARNING MATERIALS");
+            panel6.Dock = DockStyle.Fill;
+            panel6.Show();
+            }
+            else
+            {
+                MessageBox.Show("incorrect password ");
+            }
+        }
+
+        private void button3_Click_1(object sender, EventArgs e)
+        {
+           
+            string text = Interaction.InputBox("PASSWORD", "InputBox");
+            if (text == "sy2025")
+            {
+                i = 2;
+            subj = "2ND YEAR LEARNING MATERIALS";
+            lblsubj.Text = subj;
+            LoadLearningMaterials("2ND YEAR LEARNING MATERIALS");
+            panel6.Dock = DockStyle.Fill;
+            panel6.Show();
+            }
+            else
+            {
+                MessageBox.Show("incorrect password ");
+            }
+        }
+
+        private void button2_Click_1(object sender, EventArgs e)
+        {
+
+           
+            string text = Interaction.InputBox("PASSWORD", "InputBox");
+            if (text == "ty2025")
+            {
+                i = 2;
+            subj = "3RD YEAR LEARNING MATERIALS";
+            lblsubj.Text = subj;
+            LoadLearningMaterials("3RD YEAR LEARNING MATERIALS");
+            panel6.Dock = DockStyle.Fill;
+            panel6.Show();
+            }
+            else
+            {
+                MessageBox.Show("incorrect password ");
+            }
+        }
+
+        private void button1_Click_1(object sender, EventArgs e)
+        {
+
+            
+            string text = Interaction.InputBox("PASSWORD", "InputBox");
+            if (text == "4y2025")
+            {
+                i = 2;
+            subj = "4TH YEAR LEARNING MATERIALS";
+            lblsubj.Text = subj;
+            LoadLearningMaterials("4TH YEAR LEARNING MATERIALS");
+            panel6.Dock = DockStyle.Fill;
+            panel6.Show();
+             }
+            else
+            {
+                MessageBox.Show("incorrect password ");
+            }
+        }
+
+        private void label3_Click(object sender, EventArgs e)
+        {
+            num = 2;
+            LoadAnnouncement(1);
+            ChangeButtonColors(btnAnnouncement);
+
+            pnlAnnounce.Dock = DockStyle.Fill;
+            pnlAnnounce.Show();
+
+            btnLearningMaterial.Enabled = false;
+            btnSchoolCalendar.Enabled = false;
+            btnClassSchedules.Enabled = false;
+            btnAdmin.Enabled = false;
+
+            pnlLearn.Hide();
+            pnlClassSched.Hide();
+            pnlSchoolcal.Hide();
+            pnlLogin.Hide();
+        }
+
+        private void dataSub_CellContentClick_1(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex >= 0 && e.ColumnIndex == 1) 
+            {
+                object cellValue = dataSub.Rows[e.RowIndex].Cells["Filename"].Value;
+                if (cellValue != null) 
+                {
+                    string fileName = cellValue.ToString();
+                    OpenPdf(fileName);
+                }
+                else
+                {
+                    MessageBox.Show("No file found in this row.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+        }
+
+        private void dataSub2_CellContentClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex >= 0 && e.ColumnIndex == 1) 
+            {
+               
+                string columnName = "Filename"; 
+
+                if (!dataSub2.Columns.Contains(columnName)) 
+                {
+                    MessageBox.Show($"Column '{columnName}' does not exist in dataSub2.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                object cellValue = dataSub2.Rows[e.RowIndex].Cells[columnName].Value;
+                if (cellValue != null)
+                {
+                    string fileName = cellValue.ToString();
+                    OpenPdf(fileName);
+                }
+                else
+                {
+                    MessageBox.Show("No file found in this row.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+        }
+    }
+}
+
+
+//ADMIN
+
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Threading.Tasks;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+using System.Data.SQLite;
+using Microsoft.VisualBasic;
+using K4os.Compression.LZ4.Internal;
+
+namespace slsuThesis
+{
+   
+    public partial class admin : Form
+    {
+        
+        string sem, mond, tue, wed, thurs, fri = " ";
+
+        public admin()
+        {
+            InitializeComponent();
+        }
+
+    
+        // LOAD
+        private void admin_Load(object sender, EventArgs e)
+        {
+            LoadLearningMaterials();
+            LoadAnnouncements();
+            LoadSchoolCal();
+            LoadClassSched();
+
+            pnlLearn.Dock = DockStyle.Fill;
+            pnlLearn.Show();
+            pnlAnnounce.Hide();
+            pnlClassSched.Hide();
+            pnlSchoolCal.Hide();
+
+            
+        }
+        // END
+
+ 
+
+
+        public void LoadClassSched()
+        {
+            try
+            {
+                string query = "SELECT ID, TimeSched, Monday, Tuesday, Wednesday, Thursday, Friday FROM ClassSchedule";
+                DataTable dt = DatabaseHelper.ExecuteQuery(query);
+
+                dataClassSched.DataSource = dt; 
+                dataClassSched.Columns["ID"].Visible = false;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading class schedules: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        public void LoadSchoolCal()
+        {
+            try
+            {
+                string query = "SELECT ID, Date, Description FROM Records";
+                DataTable dt = DatabaseHelper.ExecuteQuery(query);
+
+                dataSchoolCal.DataSource = dt; 
+                dataSchoolCal.Columns["ID"].Visible = false; 
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading calendar records: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        //
+
+        private void btnLearningMaterial_Click(object sender, EventArgs e)
+        {   
+            pnlLearn.Dock = DockStyle.Fill;
+            pnlLearn.Show();
+
+            pnlAnnounce.Hide();
+            pnlClassSched.Hide();
+            pnlSchoolCal.Hide();
+        }
+
+        private void btnAnnouncement_Click(object sender, EventArgs e)
+        {
+            pnlAnnounce.Dock = DockStyle.Fill;
+            pnlAnnounce.Show();
+
+            pnlLearn.Hide();
+            pnlClassSched.Hide();
+            pnlSchoolCal.Hide();
+        }
+
+        private void btnClassSchedules_Click(object sender, EventArgs e)
+        {
+            comboBox1.SelectedIndex = 0;
+            comboBox2.SelectedIndex = 0;
+            comboBox3.SelectedIndex = 0;
+            comboBox4.SelectedIndex = 0;
+            comboBox5.SelectedIndex = 0;
+
+            pnlClassSched.Dock= DockStyle.Fill;
+            pnlClassSched.Show();
+
+            pnlLearn.Hide();
+            pnlAnnounce.Hide();
+            pnlSchoolCal.Hide();
+        }
+
+        private void btnSchoolCalendar_Click(object sender, EventArgs e)
+        {
+            pnlSchoolCal.Dock = DockStyle.Fill;
+            pnlSchoolCal.Show();
+
+            pnlLearn.Hide();
+            pnlAnnounce.Hide();
+            pnlClassSched.Hide();
+        }
+
+        private void btnAdmin_Click(object sender, EventArgs e)
+        {
+            Form1 frm = new Form1();
+
+            frm.label15.Text = label9.Text;
+            frm.label10.Text = label9.Text;
+            frm.label5.Text = label9.Text;
+            frm.Show();
+            this.Hide();
+        }
+
+        // Learning Materials
+        
+        private void btnBrowse_Click_1(object sender, EventArgs e)
+        {
+            using (OpenFileDialog openFileDialog = new OpenFileDialog())
+            {
+                openFileDialog.Filter = "PDF Files (*.pdf)|*.pdf";
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    txtFilename.Text = openFileDialog.FileName;
+                }
+            }
+        }
+
+        private void btnAdd_Click(object sender, EventArgs e)
+        {
+            if (radioButton1.Checked)
+                sem = "1st";
+            else
+                sem = "2nd";
+            string selectedSubject = comboBox6.SelectedItem?.ToString();
+            string filePath = txtFilename.Text;
+
+            if (string.IsNullOrEmpty(selectedSubject) || string.IsNullOrEmpty(filePath))
+            {
+                MessageBox.Show("Please select a subject and a file to add!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (!File.Exists(filePath))
+            {
+                MessageBox.Show("File does not exist.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            string folderPath = @"C:\LearningMaterials";  
+            CreateFolderIfNotExists(folderPath);
+            string fileName = Path.GetFileName(filePath);
+            string destinationPath = Path.Combine(folderPath, fileName);
+
+            if (!File.Exists(destinationPath))
+            {
+                File.Copy(filePath, destinationPath);
+            }
+
+
+            AddLearningMaterial(selectedSubject, filePath, sem);
+            txtFilename.Clear();
+            LoadLearningMaterials();
+        }
+
+
+        private void btnDelete_Click(object sender, EventArgs e)
+        {
+            if (dataLearnMat.SelectedRows.Count > 0)
+            {
+                int materialId = Convert.ToInt32(dataLearnMat.SelectedRows[0].Cells["id"].Value);
+
+                string deleteQuery = "DELETE FROM LearningMaterials WHERE id = @id";
+                DatabaseHelper.ExecuteCommand(deleteQuery, cmd =>
+                {
+                    cmd.Parameters.AddWithValue("@id", materialId);
+                });
+
+                MessageBox.Show("Learning material deleted successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadLearningMaterials();
+            }
+            else
+            {
+                MessageBox.Show("Please select a record to delete!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void LoadLearningMaterials()
+        {
+            try
+            {
+               
+                string query = "SELECT id, subject_name AS Subject, file_name AS Filename, sem FROM LearningMaterials";
+                DataTable dt = DatabaseHelper.GetData(query);
+
+              
+                if (dt != null && dt.Rows.Count > 0)
+                {
+                    dataLearnMat.DataSource = dt;
+
+                      if (dataLearnMat.Columns.Contains("id"))
+                    {
+                        dataLearnMat.Columns["id"].Visible = false;
+                    }
+                }
+               
+            }
+            catch (Exception ex)
+            {
+               
+                MessageBox.Show($"Error loading materials: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void AddLearningMaterial(string subjectName, string filePath, string sem)
+        {
+            try
+            {
+              
+                byte[] fileData = File.ReadAllBytes(filePath);
+
+                string query = "INSERT INTO LearningMaterials (subject_name, file_name, file_data, sem) VALUES (@subject_name, @file_name, @file_data, @sem)";
+
+                DatabaseHelper.ExecuteCommand(query, cmd =>
+                {
+                    cmd.Parameters.AddWithValue("@subject_name", subjectName);
+                    cmd.Parameters.AddWithValue("@file_name", Path.GetFileName(filePath)); 
+                    cmd.Parameters.AddWithValue("@file_data", fileData); 
+                    cmd.Parameters.AddWithValue("@sem", sem); 
+                });
+
+                MessageBox.Show("File uploaded successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error uploading file: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+       
+        private void CreateFolderIfNotExists(string folderPath)
+        {
+            if (!Directory.Exists(folderPath))
+            {
+                Directory.CreateDirectory(folderPath); 
+            }
+        }
+
+        // END LEARNING MATERIALS
+
+        // Start of Announcement
+        private void btnAnnBrowse_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp";
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    picAnnounce.Image = Image.FromFile(ofd.FileName);
+                }
+            }
+        }
+
+        private void btnAddAnn_Click(object sender, EventArgs e)
+        {
+            try
+            {
+              
+                if (string.IsNullOrWhiteSpace(txtTitleAnn.Text) || string.IsNullOrWhiteSpace(txtDecAnn.Text))
+                {
+                    MessageBox.Show("Title and Description cannot be empty.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return; 
+                }
+
+                byte[] photoBytes = null;
+                if (picAnnounce.Image != null)
+                {
+                    using (MemoryStream ms = new MemoryStream())
+                    {
+                        picAnnounce.Image.Save(ms, picAnnounce.Image.RawFormat);
+                        photoBytes = ms.ToArray();
+                    }
+                }
+
+                string query = "INSERT INTO Announcements (Photo, Title, Description) VALUES (@Photo, @Title, @Description)";
+                SQLiteParameter[] parameters = {
+                new SQLiteParameter("@Photo", photoBytes),
+                new SQLiteParameter("@Title", txtTitleAnn.Text),
+                new SQLiteParameter("@Description", txtDecAnn.Text)
+                };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+
+                MessageBox.Show("Announcement added successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadAnnouncements();
+                cian();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void btnUpdateAnn_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (tblAnnounce.CurrentRow == null)
+                {
+                    MessageBox.Show("Please select an announcement to update.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                int id = Convert.ToInt32(tblAnnounce.CurrentRow.Cells["ID"].Value);
+                byte[] photoBytes = null;
+
+                if (picAnnounce.Image != null)
+                {
+                    using (MemoryStream ms = new MemoryStream())
+                    {
+                        picAnnounce.Image.Save(ms, picAnnounce.Image.RawFormat);
+                        photoBytes = ms.ToArray();
+                    }
+                }
+
+                string query = "UPDATE Announcements SET Photo = @Photo, Title = @Title, Description = @Description WHERE ID = @ID";
+                SQLiteParameter[] parameters = {
+                new SQLiteParameter("@Photo", photoBytes),
+                new SQLiteParameter("@Title", txtTitleAnn.Text),
+                new SQLiteParameter("@Description", txtDecAnn.Text),
+                new SQLiteParameter("@ID", id)
+            };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+
+                MessageBox.Show("Announcement updated successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadAnnouncements();
+                cian();
+               
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void btnDelAnn_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (tblAnnounce.CurrentRow == null)
+                {
+                    MessageBox.Show("Please select an announcement to delete.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                int id = Convert.ToInt32(tblAnnounce.CurrentRow.Cells["ID"].Value);
+
+                string query = "DELETE FROM Announcements WHERE ID = @ID";
+                SQLiteParameter[] parameters = {
+                new SQLiteParameter("@ID", id)
+            };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+
+                MessageBox.Show("Announcement deleted successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadAnnouncements();
+                cian();
+                btnAddAnn.Enabled=true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private void tblAnnounce_CellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex >= 0) 
+            {
+              
+                var selectedRow = tblAnnounce.Rows[e.RowIndex];
+
+             
+                DialogResult result = MessageBox.Show("Do you want to update ?", "Confirm Update", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+                if (result == DialogResult.Yes)
+                {
+                    btnAddAnn.Enabled = false;
+                    txtTitleAnn.Text = selectedRow.Cells["Title"].Value.ToString();
+                    txtDecAnn.Text = selectedRow.Cells["Description"].Value.ToString();
+
+                   
+                    if (selectedRow.Cells["Photo"].Value != DBNull.Value)
+                    {
+                        byte[] photoBytes = (byte[])selectedRow.Cells["Photo"].Value;
+                        using (MemoryStream ms = new MemoryStream(photoBytes))
+                        {
+                            picAnnounce.Image = Image.FromStream(ms);
+                        }
+                    }
+                    else
+                    {
+                        picAnnounce.Image = null; 
+                    }
+  
+                    var cellValue = selectedRow.Cells["ID"].Value;
+                    if (cellValue != null && (cellValue.ToString() == "1" || cellValue.ToString() == "2" || cellValue.ToString() == "3"))
+                    {
+                        btnDelAnn.Enabled = false;
+                    }
+                    else
+                    {
+                        btnDelAnn.Enabled = true; 
+                    }
+                }
+              
+            }
+        }
+
+        private void LoadAnnouncements()
+        {
+            try
+            {
+                string query = "SELECT ID, Photo, Title, Description FROM Announcements";
+                DataTable dt = DatabaseHelper.ExecuteQuery(query);
+
+                dt.Columns.Add("DisplayPhoto", typeof(Image));
+
+                foreach (DataRow row in dt.Rows)
+                {
+                    if (row["Photo"] != DBNull.Value)
+                    {
+                        byte[] photoBytes = (byte[])row["Photo"];
+                        using (MemoryStream ms = new MemoryStream(photoBytes))
+                        {
+                            Image image = Image.FromStream(ms);
+                            image = ResizeImage(image, 100, 100);
+                            row["DisplayPhoto"] = image;
+                        }
+                    }
+                }
+
+                tblAnnounce.DataSource = dt;
+                tblAnnounce.Columns["DisplayPhoto"].HeaderText = "Photo";
+                tblAnnounce.Columns["DisplayPhoto"].Width = 100;
+                tblAnnounce.RowTemplate.Height = 100;
+                tblAnnounce.Columns["DisplayPhoto"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+                tblAnnounce.Columns["Photo"].Visible = false;
+                tblAnnounce.Columns["ID"].Visible = false;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading announcements: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private Image ResizeImage(Image img, int width, int height)
+        {
+            return new Bitmap(img, new Size(width, height));  
+        }
+
+        private void cian()
+        {
+          picAnnounce.Image = null;
+          txtDecAnn.Clear();
+          txtTitleAnn.Clear();
+          btnAddAnn.Enabled = true;
+          btnDelAnn.Enabled = true;
+        }
+        // END OF ANNOUNCEMENT
+
+        // Start class sched
+        private void btnAddSched_Click(object sender, EventArgs e)
+        {
+            
+            mond = comboBox1.SelectedItem.ToString();
+            tue = comboBox2.SelectedItem.ToString();
+            wed = comboBox3.SelectedItem.ToString();
+            thurs = comboBox4.SelectedItem.ToString();
+            fri = comboBox5.SelectedItem.ToString();
+           
+            try
+            {
+                
+                if (string.IsNullOrWhiteSpace(txtt1.Text) || string.IsNullOrWhiteSpace(txtt2.Text))
+                {
+                    MessageBox.Show("Start time and End time cannot be empty.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                string query = "INSERT INTO ClassSchedule (TimeSched, Monday, Tuesday, Wednesday, Thursday, Friday) VALUES (@TimeSched, @Monday, @Tuesday, @Wednesday, @Thursday, @Friday)";
+                SQLiteParameter[] parameters = {
+                new SQLiteParameter("@TimeSched", $"{txtt1.Text} - {txtt2.Text}"),
+                new SQLiteParameter("@Monday", $"{txtMonSched.Text} \n {mond}" ),
+                new SQLiteParameter("@Tuesday", $"{txtTueSched.Text}  \n {tue}"),
+                new SQLiteParameter("@Wednesday", $"{txtWedSched.Text} \n {wed}"),
+                new SQLiteParameter("@Thursday",  $"{txtThurSched.Text}  \n {thurs}"),
+                new SQLiteParameter("@Friday",  $"{txtFriSched.Text}  \n {fri}")
+               };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+
+                MessageBox.Show("Class schedule successfully added!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadClassSched();
+                cics();
+                if (Application.OpenForms["Form1"] is Form1 form1)
+                {
+                    form1.LoadClassSchedData();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error inserting class schedule: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+        }
+
+        private void btnUpdateSched_Click(object sender, EventArgs e)
+        {
+            mond = comboBox1.SelectedItem.ToString();
+            tue = comboBox2.SelectedItem.ToString();
+            wed = comboBox3.SelectedItem.ToString();
+            thurs = comboBox4.SelectedItem.ToString();
+            fri = comboBox5.SelectedItem.ToString();
+
+            try
+            {
+                if (dataClassSched.CurrentRow == null)
+                {
+                    MessageBox.Show("Please select a schedule to update.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                int id = Convert.ToInt32(dataClassSched.CurrentRow.Cells["ID"].Value);
+                string query = "UPDATE ClassSchedule SET TimeSched = @TimeSched, Monday = @Monday, Tuesday = @Tuesday, Wednesday = @Wednesday, Thursday = @Thursday, Friday = @Friday WHERE ID = @ID";
+                SQLiteParameter[] parameters = {
+                new SQLiteParameter("@ID", id),
+                new SQLiteParameter("@TimeSched", $"{txtt1.Text} - {txtt2.Text}"),
+               new SQLiteParameter("@Monday", $"{txtMonSched.Text} .\n {mond}" ),
+                new SQLiteParameter("@Tuesday", $"{txtTueSched.Text} .\n {tue}"),
+                new SQLiteParameter("@Wednesday", $"{txtWedSched.Text}.\n {wed}"),
+                new SQLiteParameter("@Thursday",  $"{txtThurSched.Text} .\n {thurs}"),
+                new SQLiteParameter("@Friday",  $"{txtFriSched.Text} .\n {fri}")
+            };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+
+                MessageBox.Show("Class schedule updated successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadClassSched(); 
+                cics();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error updating class schedule: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+           
+        }
+
+        private void btnDelSched_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (dataClassSched.CurrentRow == null)
+                {
+                    MessageBox.Show("Please select a schedule to delete.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                int id = Convert.ToInt32(dataClassSched.CurrentRow.Cells["ID"].Value);
+                string query = "DELETE FROM ClassSchedule WHERE ID = @ID";
+                SQLiteParameter[] parameters = {
+                new SQLiteParameter("@ID", id)
+            };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+
+                MessageBox.Show("Class schedule deleted successfully!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadClassSched();
+                cics();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error deleting class schedule: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void dataClassSched_CellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            DialogResult result = MessageBox.Show("Do you want to update ?", "Confirm Update", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+            if (result == DialogResult.Yes)
+            {
+                btnAddSched.Enabled = false;
+                if (e.RowIndex >= 0)
+                {
+                    DataGridViewRow row = dataClassSched.Rows[e.RowIndex];
+                    txtt1.Text = row.Cells["TimeSched"].Value.ToString().Split('-')[0];
+                    txtt2.Text = row.Cells["TimeSched"].Value.ToString().Split('-')[1];
+                    txtMonSched.Text = row.Cells["Monday"].Value.ToString().Split('.')[0];
+                    txtTueSched.Text = row.Cells["Tuesday"].Value.ToString().Split('.')[0];
+                    txtWedSched.Text = row.Cells["Wednesday"].Value.ToString().Split('.')[0];
+                    txtThurSched.Text = row.Cells["Thursday"].Value.ToString().Split('.')[0];
+                    txtFriSched.Text = row.Cells["Friday"].Value.ToString().Split('.')[0];
+                }
+            }
+        }
+
+        private void cics()
+        {
+            txtt1.Clear();
+            txtt2.Clear();
+            txtMonSched.Clear();
+            txtTueSched.Clear();
+            txtWedSched.Clear();
+            txtThurSched.Clear();
+            txtFriSched.Clear();
+            btnAddSched.Enabled = true;
+        }
+
+
+        // end class sched
+
+        // Star school calendar 
+        private void btnAddCal_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(txtDateCal.Text) || string.IsNullOrWhiteSpace(txtDesCal.Text))
+            {
+                MessageBox.Show("Please fill in all fields.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                string query = "INSERT INTO Records (Date, Description) VALUES (@date, @description)";
+                SQLiteParameter[] parameters = {
+                new SQLiteParameter("@date", txtDateCal.Text),
+                new SQLiteParameter("@description", txtDesCal.Text)
+            };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+
+                MessageBox.Show("Record added successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadSchoolCal();
+                cisc();
+                if (Application.OpenForms["Form1"] is Form1 form1)
+                {
+                    form1.LoadSchoolCalData();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error adding record: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            string prof = Interaction.InputBox("input professor name:", "InputBox");
+            comboBox1.Items.Add(prof);
+            comboBox2.Items.Add(prof);
+            comboBox3.Items.Add(prof);
+            comboBox4.Items.Add(prof);
+            comboBox5.Items.Add(prof);
+            comboBox7.Items.Add(prof);
+
+        }
+
+        private void button3_Click(object sender, EventArgs e)
+        {
+            if (comboBox1.SelectedIndex != -1)
+                comboBox1.Items.RemoveAt(comboBox1.SelectedIndex);
+
+            comboBox2.Items.Remove(comboBox2.SelectedIndex);
+            comboBox3.Items.Remove(comboBox3.SelectedIndex);
+            comboBox4.Items.Remove(comboBox4.SelectedIndex);
+            comboBox5.Items.Remove(comboBox5.SelectedIndex);
+            comboBox7.Items.Remove(comboBox2.SelectedItem);
+        }
+
+        private void button1_Click_1(object sender, EventArgs e)
+        {
+            
+            string temp1 = Interaction.InputBox("input SY:", "InputBox");
+            string temp2 = Interaction.InputBox("input SY:", "InputBox");
+           
+            label9.Text = "S.Y. " + temp1 + " - " + temp2;
+        }
+
+        private void dataSchoolCal_CellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            DialogResult result = MessageBox.Show("Do you want to update ?", "Confirm Update", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+            if (result == DialogResult.Yes)
+            {
+                btnAddCal.Enabled = false;
+                if (dataSchoolCal.CurrentRow != null && dataSchoolCal.CurrentRow.Cells["ID"].Value != null)
+                {
+                    txtDateCal.Text = dataSchoolCal.CurrentRow.Cells["Date"].Value.ToString();
+                    txtDesCal.Text = dataSchoolCal.CurrentRow.Cells["Description"].Value.ToString();
+                }
+            }
+        }
+
+        private void btnUpdateCall_Click(object sender, EventArgs e)
+        {
+            if (dataSchoolCal.CurrentRow == null || dataSchoolCal.CurrentRow.Cells["ID"].Value == null)
+            {
+                MessageBox.Show("Please select a record to update.", "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            int id = Convert.ToInt32(dataSchoolCal.CurrentRow.Cells["ID"].Value);
+
+            try
+            {
+                string query = "UPDATE Records SET Date = @date, Description = @description WHERE ID = @id";
+                SQLiteParameter[] parameters = {
+                new SQLiteParameter("@id", id),
+                new SQLiteParameter("@date", txtDateCal.Text),
+                new SQLiteParameter("@description", txtDesCal.Text)
+            };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+
+                MessageBox.Show("Record updated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadSchoolCal(); 
+                cisc();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error updating record: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            
+        }
+
+        private void btnDelCall_Click(object sender, EventArgs e)
+        {
+            if (dataSchoolCal.CurrentRow == null || dataSchoolCal.CurrentRow.Cells["ID"].Value == null)
+            {
+                MessageBox.Show("Please select a record to delete.", "Delete Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            int id = Convert.ToInt32(dataSchoolCal.CurrentRow.Cells["ID"].Value);
+
+            try
+            {
+                string query = "DELETE FROM Records WHERE ID = @id";
+                SQLiteParameter[] parameters = {
+                new SQLiteParameter("@id", id)
+            };
+
+                DatabaseHelper.ExecuteNonQuery(query, parameters);
+
+                MessageBox.Show("Record deleted successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadSchoolCal(); 
+                cisc();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error deleting record: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private void cisc()
+        {
+            btnAddCal.Enabled = true;
+            txtDateCal.Clear();
+            txtDesCal.Clear();
+        }
+
+   
+
+        //end school cal
+    }
+}
+
+
+//SQLITE
+
+using System;
+using System.Data;
+using System.Data.SQLite;
+using System.IO;
+using System.Windows.Forms;
+
+public static class DatabaseHelper
+{
+    private static string folderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DatabaseFiles");
+    private static string databaseFile = "slsuThesis.db";
+    private static string databasePath = Path.Combine(folderPath, databaseFile);
+    private static string connectionString = $"Data Source={databasePath};Version=3;";
+
+    public static void InitializeDatabase()
+    {
+
+        try
+        {
+           
+            if (!Directory.Exists(folderPath))
+            {
+                Directory.CreateDirectory(folderPath);
+                MessageBox.Show($"Folder created at: {folderPath}", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+
+            if (!File.Exists(databasePath))
+            {
+                SQLiteConnection.CreateFile(databasePath);
+                MessageBox.Show($"Database created at: {databasePath}", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+        {
+            conn.Open();
+
+          
+            MessageBox.Show("Database connection established successfully.", "Connection Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+             
+
+                string createTables = @"
+                
+                CREATE TABLE IF NOT EXISTS LearningMaterials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subject_name TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_data BLOB NOT NULL,
+                sem TEXT NOT NULL
+            );
+                
+
+                CREATE TABLE IF NOT EXISTS Announcements (
+                    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Photo BLOB,
+                    Title TEXT,
+                    Description TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS SubAnnouncements (
+                    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Photo BLOB,
+                    Title TEXT,
+                    Description TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS ClassSchedule (
+                    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    TimeSched TEXT NOT NULL,
+                    Monday TEXT,
+                    Tuesday TEXT,
+                    Wednesday TEXT,
+                    Thursday TEXT,
+                    Friday TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS Records (
+                    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Date TEXT NOT NULL,
+                    Description TEXT NOT NULL
+                );
+            ";
+
+          
+            using (SQLiteCommand cmd = new SQLiteCommand(createTables, conn))
+            {
+                cmd.ExecuteNonQuery();
+                }
+                MessageBox.Show("Database and tables initialized successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error initializing the database: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    public static DataTable GetData(string query)
+    {
+        try
+        {
+            using (SQLiteConnection connection = new SQLiteConnection(connectionString))
+            {
+                connection.Open();
+                using (SQLiteDataAdapter adapter = new SQLiteDataAdapter(query, connection))
+                {
+                    DataTable table = new DataTable();
+                    adapter.Fill(table);
+                    return table;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error retrieving data: {ex.Message}", "Database Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return null;
+        }
+    }
+
+    public static void ExecuteCommand(string query, Action<SQLiteCommand> parameterSetter = null)
+    {
+        try
+        {
+            using (SQLiteConnection connection = new SQLiteConnection(connectionString))
+            {
+                connection.Open();
+                using (SQLiteCommand command = new SQLiteCommand(query, connection))
+                {
+                    parameterSetter?.Invoke(command);
+                    command.ExecuteNonQuery();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Database error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    public static int ExecuteNonQuery(string query, SQLiteParameter[] parameters = null)
+    {
+        using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+        {
+            conn.Open();
+            using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
+            {
+                if (parameters != null)
+                    cmd.Parameters.AddRange(parameters);
+
+                return cmd.ExecuteNonQuery();
+            }
+        }
+    }
+
+    public static DataTable ExecuteQuery(string query, SQLiteParameter[] parameters = null)
+    {
+        using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+        {
+            conn.Open();
+            using (SQLiteCommand cmd = new SQLiteCommand(query, conn))
+            {
+                if (parameters != null)
+                    cmd.Parameters.AddRange(parameters);
+
+                SQLiteDataAdapter adapter = new SQLiteDataAdapter(cmd);
+                DataTable dt = new DataTable();
+                adapter.Fill(dt);
+                return dt;
+            }
+        }
+    }
+
+    public static DataRow GetSingleRow(string query, params SQLiteParameter[] parameters)
+    {
+        using (SQLiteConnection connection = new SQLiteConnection(connectionString))
+        {
+            connection.Open();
+
+            using (SQLiteCommand cmd = new SQLiteCommand(query, connection))
+            {
+                cmd.Parameters.AddRange(parameters);
+
+                using (SQLiteDataAdapter adapter = new SQLiteDataAdapter(cmd))
+                {
+                    DataTable table = new DataTable();
+                    adapter.Fill(table);
+
+                    if (table.Rows.Count > 0)
+                    {
+                        return table.Rows[0];
+                    }
+                    else
+                    {
+                        return null;
+                    }
+                }
+            }
+        }
+    }
+
+    public static DataTable GetDataTable(string query, params SQLiteParameter[] parameters)
+    {
+        using (SQLiteConnection connection = new SQLiteConnection(connectionString))
+        {
+            connection.Open();
+
+            using (SQLiteCommand cmd = new SQLiteCommand(query, connection))
+            {
+                cmd.Parameters.AddRange(parameters);
+
+                using (SQLiteDataAdapter adapter = new SQLiteDataAdapter(cmd))
+                {
+                    DataTable table = new DataTable();
+                    adapter.Fill(table);
+                    return table;
+                }
+            }
+        }
+    }
+    public static object ExecuteScalar(string query, params SQLiteParameter[] parameters)
+    {
+        using (SQLiteConnection connection = new SQLiteConnection(connectionString))
+        {
+            connection.Open();
+            using (SQLiteCommand cmd = new SQLiteCommand(query, connection))
+            {
+                cmd.Parameters.AddRange(parameters);
+                return cmd.ExecuteScalar();
+            }
+        }
+    }
+}
+
+
